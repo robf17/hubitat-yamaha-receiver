@@ -1,6 +1,7 @@
 /**
  *  Hubitat Driver: Yamaha Zone
  *
+ *  Author: Rob Fair
  *  Author: Ben Rimmasch
  *  Derived from redloro@gmail.com's ST work for Yamaha Receivers
  *
@@ -12,9 +13,14 @@
  *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
+ *
+ * History:
+ *      9-1-2022 RobF Added Surround Program support
+ *      9-1-2022 RobF Added Scene support
+ *      9-1-2022 RobF All available sources can be selected
  */
 metadata {
-  definition(name: "Yamaha Zone", namespace: "codahq-hubitat", author: "Ben Rimmasch") {
+  definition(name: "Yamaha Zone", namespace: "robf17", author: "Ben Rimmasch") {
 
     /**
      * List our capabilties. Doing so adds predefined command(s) which
@@ -37,21 +43,50 @@ metadata {
      * To call a capability function, just prefix it with the name
      * of the capability, for example, refresh would be "refresh.refresh"
      */
-    command "source0"
     command "source1"
     command "source2"
     command "source3"
     command "source4"
     command "source5"
+    command "source6"
+
     command "partyModeOn"
     command "partyModeOff"
     command "setDb", [[name: "Set Volume", type: "NUMBER", range: -80..15, description: "Enter dB (default range -80 to 15)"]]
     command "systemConfigReport"
-
+    command "surroundProgram", [[name:"Sound Program", type: "ENUM", constraints: [
+                "Standard",
+                "Spectacle",
+                "Sci-Fi",
+                "Adventure",
+                "Drama",
+                "Mono Movie",
+                "Surround Decoder",
+                "2ch Stereo",
+                "7ch Stereo",
+                "Hall in Munich",
+                "Hall in Vienna",
+                "Chamber",
+                "Cellar Club",
+                "The Roxy Theatre",
+                "The Bottom Line",
+                "Sports",
+                "Action Game",
+                "Roleplaying Game",
+                "Music Video"]]]
+    command "scene", [[name: "Scene", type: "ENUM", constraints: [
+                "",
+                "Scene 1",
+                "Scene 2",
+                "Scene 3",
+                "Scene 4"]]]
     attribute "dB", "number"
     attribute "volume", "number"
     attribute "source", "string"
     attribute "partyMode", "string"
+    attribute "soundProgram", "string"
+    attribute "supportedSources", "string"
+
   }
 
   /**
@@ -82,10 +117,7 @@ metadata {
     }
 
     // row
-    standardTile("0", "device.source0", decoration: "flat", width: 2, height: 2) {
-      state("off", label: "AV1", action: "source0", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-gray.png", backgroundColor: "#ffffff")
-      state("on", label: "AV1", action: "source0", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-green.png", backgroundColor: "#ffffff")
-    }
+ 
     standardTile("1", "device.source1", decoration: "flat", width: 2, height: 2) {
       state("off", label: "AV2", action: "source1", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-gray.png", backgroundColor: "#ffffff")
       state("on", label: "AV2", action: "source1", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-green.png", backgroundColor: "#ffffff")
@@ -105,6 +137,10 @@ metadata {
     standardTile("5", "device.source5", decoration: "flat", width: 2, height: 2) {
       state("off", label: "AV6", action: "source5", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-gray.png", backgroundColor: "#ffffff")
       state("on", label: "AV6", action: "source5", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-green.png", backgroundColor: "#ffffff")
+    }   
+    standardTile("6", "device.source6", decoration: "flat", width: 2, height: 2) {
+      state("off", label: "AV1", action: "source6", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-gray.png", backgroundColor: "#ffffff")
+      state("on", label: "AV1", action: "source6", icon: "https://raw.githubusercontent.com/redloro/smartthings/master/images/indicator-dot-green.png", backgroundColor: "#ffffff")
     }
 
     // row
@@ -127,18 +163,20 @@ metadata {
     details([
       "state",
       "volume",
-      "0", "1", "2", "3", "4", "5",
+      "1", "2", "3", "4", "5","6",
       "muted", "partyMode", "refresh"
     ])
   }
 
   preferences {
-    input name: "source0", type: "text", title: "Source 1", defaultValue: "AV1"
-    input name: "source1", type: "text", title: "Source 2", defaultValue: "AV2"
-    input name: "source2", type: "text", title: "Source 3", defaultValue: "AV3"
-    input name: "source3", type: "text", title: "Source 4", defaultValue: "AV4"
-    input name: "source4", type: "text", title: "Source 5", defaultValue: "AV5"
-    input name: "source5", type: "text", title: "Source 6", defaultValue: "AV6"
+     
+    input name:"source1", type:"enum", title: "Source 1", options:getSources(), defaultValue: "AV1"
+    input name:"source2", type:"enum", title: "Source 2", options:getSources(), defaultValue: "AV2"
+    input name:"source3", type:"enum", title: "Source 3", options:getSources(), defaultValue: "AV3"
+    input name:"source4", type:"enum", title: "Source 4", options:getSources(), defaultValue: "AV4"
+    input name:"source5", type:"enum", title: "Source 5", options:getSources(), defaultValue: "AV5"
+    input name:"source6", type:"enum", title: "Source 6", options:getSources(), defaultValue: "AV6"
+
     input name: "descriptionTextEnable", type: "bool", title: "Enable descriptionText logging", defaultValue: false
     input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: false
     input name: "traceLogEnable", type: "bool", title: "Enable trace logging", defaultValue: false
@@ -250,14 +288,33 @@ def unmute() {
   sendCommand("<YAMAHA_AV cmd=\"PUT\"><${getZone()}><Volume><Mute>Off</Mute></Volume></${getZone()}></YAMAHA_AV>")
   sendEvent(name: "mute", value: "unmuted")
 }
+def surroundProgram(def program ) {
+  if (program.isEmpty()) {
+     logInfo "Surround program name is missing"
+     return
+  }      
+  logTrace "Surround Program selected with ${program}"
+  sendCommand("<YAMAHA_AV cmd=\"PUT\"><${getZone()}><Surround><Program_Sel><Current><Sound_Program>${program}</Sound_Program></Current></Program_Sel></Surround></${getZone()}></YAMAHA_AV>")
+  sendEvent(name: "soundProgram", value: program)
+}
+
+def scene(def scene ) {
+  if (scene.isEmpty()) {
+     logInfo "Scene name is missing"
+     return
+  }      
+  logTrace "Scene selected with ${scene}"
+  sendCommand("<YAMAHA_AV cmd=\"PUT\"><${getZone()}><Scene><Scene_Load>${scene}</Scene_Load></Scene></${getZone()}></YAMAHA_AV>")
+  sendEvent(name: "scene", value: scene)
+  // Changing scene can change other settings also.
+  runIn(2, 'refresh')  
+}
 
 def systemConfigReport() {
   sendCommand("<YAMAHA_AV cmd=\"GET\"><System><Config>GetParam</Config></System></YAMAHA_AV>")
 }
 
-def source0() {
-  setSource(0)
-}
+
 def source1() {
   setSource(1)
 }
@@ -273,6 +330,9 @@ def source4() {
 def source5() {
   setSource(5)
 }
+def source6() {
+  setSource(6)
+}
 
 def partyModeOn() {
   sendCommand("<YAMAHA_AV cmd=\"PUT\"><System><Party_Mode><Mode>On</Mode></Party_Mode></System></YAMAHA_AV>")
@@ -283,6 +343,7 @@ def partyModeOff() {
   sendEvent(name: "partyMode", value: "off")
 }
 def refresh() {
+  sendCommand("<YAMAHA_AV cmd=\"GET\"><System><Config>GetParam</Config></System></YAMAHA_AV>")
   sendCommand("<YAMAHA_AV cmd=\"GET\"><${getZone()}><Basic_Status>GetParam</Basic_Status></${getZone()}></YAMAHA_AV>")
   sendCommand("<YAMAHA_AV cmd=\"GET\"><System><Party_Mode><Mode>GetParam</Mode></Party_Mode></System></YAMAHA_AV>")
 }
@@ -301,7 +362,6 @@ def parse(String description) {
 }
 
 def setSource(id) {
-  logDebug "setSource(${id})"
   logInfo "Setting source to " + getSourceName(id)
   sendCommand("<YAMAHA_AV cmd=\"PUT\"><${getZone()}><Input><Input_Sel>" + getSourceName(id) + "</Input_Sel></Input></${getZone()}></YAMAHA_AV>")
   setSourceTile(getSourceName(id))
@@ -309,25 +369,40 @@ def setSource(id) {
 
 def getSourceName(id) {
   if (settings) {
-    return settings."source${id}"
+      return settings."source${id}"
   }
   else {
-    return ['AV1', 'AV2', 'AV3', 'AV4', 'AV5', 'AV6'].get(id)
+    return ['', 'AV1', 'AV2', 'AV3', 'AV4', 'AV5', 'AV6'].get(id)
   }
 }
 
 def setSourceTile(name) {
-  sendEvent(name: "source", value: "Source: ${name}")
-  for (def i = 0; i < 6; i++) {
+  id = 0
+  for (def i = 1; i <= 6; i++) {
     if (name == getSourceName(i)) {
+      id = i
       sendEvent(name: "source${i}", value: "on")
     }
     else {
       sendEvent(name: "source${i}", value: "off")
     }
   }
+    sendEvent(name: "source", value: "Source ${id}: ${name}")
 }
 
+List<String> getSources() {
+    if (state.supportedSources == nil) {
+        return ["AV1","AV2", "AV3", "AV4", "AV5", "AV6"]
+    }
+    def sources = state.supportedSources.split(",")
+    def sourceList =[]
+    for (def i = 0; i < sources.size() ;i++) {
+        sourceList.add(sources[i]- ' ')
+    }
+    return sourceList
+}
+
+// Called from parent with updates
 def zone(evt) {
   if (evt == null) {
     log.warn "Calling from UI not implemented!"
@@ -365,9 +440,17 @@ def zone(evt) {
   * Zone Source
   */
   if (evt.Basic_Status.Input.Input_Sel.text()) {
+      logDebug "Source: ${evt.Basic_Status.Input.Input_Sel.text()}"
     setSourceTile(evt.Basic_Status.Input.Input_Sel.text())
   }
+   
+  /*
+   * Surround program
+   */
+    if (evt.Basic_Status.Surround.Program_Sel.Current.Sound_Program.text()) {
+       sendEvent(name: "soundProgram", value: evt.Basic_Status.Surround.Program_Sel.Current.Sound_Program.text())
 
+    }
   /*
   * Party Mode
   */
@@ -380,8 +463,11 @@ def zone(evt) {
       node ->
         node.text() ?.trim()
     }
-    logTrace "supportedSources: ${supportedSources}"
+    
     state.supportedSources = supportedSources.join(", ")
+    logTrace "supportedSources: ${state.supportedSources}"
+
+    addExtraSupportedSources()
   }
 
   if (evt.Config.Feature_Existence.text()) {
@@ -392,9 +478,37 @@ def zone(evt) {
       }
       acc
     }
-    logTrace "supportedFeatures: ${supportedFeatures}"
     state.supportedFeatures = supportedFeatures.join(", ")
+    logTrace "supportedFeatures: ${state.supportedFeatures}"
+
+    addExtraSupportedSources()
   }
+}
+
+private addExtraSupportedSources() {
+    if (state.supportedFeatures == null || 
+        state.supportedSources == null ) {
+        return
+    }
+    def supportedFeatures = state.supportedFeatures.split(",") 
+    def supportedSources = []
+    supportedSources.addAll(state.supportedSources.split(","))
+    for (def i = 0; i < supportedSources.size();i++) {
+       supportedSources[i] = supportedSources[i]- ' '
+    }
+    // supportedSources = supportedSources.collect{elem -> return elem - ' '}
+    for (def i = 0; i < supportedFeatures.size(); i++) {
+        def feature = supportedFeatures[i] - ' '
+     
+        if (feature in ["Main_Zone", "Zone_2","NET_RADIO", "Tuner"]) {
+                continue
+        }
+        
+        if (!supportedSources.contains(feature)) {
+            supportedSources.add(feature)
+        }
+    }
+    state.supportedSources = supportedSources.join(", ")
 }
 
 private sendCommand(body) {
